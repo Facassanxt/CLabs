@@ -1,3 +1,6 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 //#include "stdafx.h" 
 #include <iostream> 
 #include <conf.h> // функции, структуры и константы настройки OpenSSL 
@@ -15,165 +18,95 @@
 #pragma comment (lib, "user32") 
 #pragma comment (lib, "wldap32") 
 
-// библиотеки OpenSSL (openssl.org) подключаются неявно динамически (см. конспект лаб. по библиотекам) 
+//#define BUFLEN 256
+// библиотеки OpenSSL (openssl.org) подключаются неявно динамически (см. конспект лаб. по библиотекам)
 
 using namespace std;
 
 int main()
 {
-	setlocale(LC_ALL, "Russian");
+	setlocale(LC_ALL, "rus");
 
-	fstream first("plaintext.txt", ios::binary | ios::in);
-	fstream second("cryptedtext.txt", ios::binary | ios::out | ios::in);
-	fstream third("decrypted.txt", ios::binary | ios::out);
+	unsigned char *plaintext = (unsigned char *)"";// исходный текст
+	int plaintext_len = strlen((char *)plaintext); // длина текста
+	unsigned char *key = (unsigned char *)"0123456789";// пароль (ключ)
+	unsigned char *iv = (unsigned char *)"0123456789012345";// инициализирующий вектор, рандомайзер
+	unsigned char cryptedtext[256]; // зашифрованный результат
+	unsigned char decryptedtext[256]; // расшифрованный результат
 
-	// работа с криптофункциями OpenSSL: 
-	// 1) создание объекта с настройками 
-	// 2) собственно, шифрование 
-	// 3) финализация 
-	// 4) и вывод зашифрованных данных 
+	EVP_CIPHER_CTX *ctx;//структура
+	int len;
+	fstream f0, f_encripted, f_decrypted;
+	f0.open("plaintext.txt", std::fstream::in | std::fstream::binary);  //файл с исходными данными
 
-	// как правило, в литературе, структуры используются для хранения только данных 
-	// ни слова о методах и конструкторах/деструкторах 
-	struct name_of_my_struct // сродни классу 
+										//файл для зашифрованых данных
+	f_encripted.open("f_encripted.txt",
+		std::fstream::out | std::fstream::trunc | std::fstream::binary);
+
+	char buffer[256] = { 0 };
+	char out_buf[256] = { 0 };
+
+	ctx = EVP_CIPHER_CTX_new();
+	EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv);
+	len = 0;
+	f0.read(buffer, 256);
+	while (f0.gcount() > 0)//цикл, пока из файла что то считывается(пока размер считаной функции >0)
+
 	{
-		name_of_my_struct()
-		{
+		// шифрование порции 
+		// EVP_EncryptUpdate(ctx, // объект с настройками 
+		//	(unsigned char *)out_buf, // входной параметр: ссылка, куда помещать зашифрованные данные 
+		//	&len, // выходной параметр: длина полученного шифра 
+		//	(unsigned char *)buffer, // входной параметр: что шифровать 
+		//	f0.gcount()); // входной параметр : длина входных данных 
+		EVP_EncryptUpdate(ctx, (unsigned char *)out_buf, &len, (unsigned char *)buffer, f0.gcount());
+		// вывод зашифрованной порции в файл 
+		f_encripted.write(out_buf, len);
 
-		}
-
-		int a;
-		double b;
-		int fnc1()
-		{
-			return a;
-		}
-	};
-	
-//	unsigned char *plaintext =
-//		(unsigned char *)"EVP_EncryptUpdate() encrypts inl bytes from the buffer in and writes the encrypted version to out";// исходный текст 
-//	int plaintext_len = strlen((char *)plaintext); // длина текста 
-
-	unsigned char plaintext[256 * 100] = {};
-	unsigned char cryptedtext[256 * 100] = {}; // зашифрованный результат 
-	unsigned char decryptedtext[256 * 100] = {}; // расшифрованный результат 
-
-	unsigned char *key = (unsigned char *)"0123456789"; // пароль (ключ) 
-	unsigned char *iv = (unsigned char *)"0123456789012345"; // инициализирующий вектор, рандомайзер 
-
-
-	// 1. Создаётся указатель на несуществующую структуру 
-	// структура - тип данных в C++, близка к КЛАССУ, различия минимальны 
-	EVP_CIPHER_CTX *ctx; // structure 
-
-	// 2. Для указателя создаётся пустая структура настроек (метод, ключ, вектор инициализации и т.д.) 
-	ctx = EVP_CIPHER_CTX_new(); // создание структуры с настройками метода 
-
-	// 3. Структура EVP_CIPHER_CTX заполняется настройками 
-	EVP_EncryptInit_ex(ctx, // ссылка на объект/структуру, куда заносятся параметры 
-		EVP_aes_256_cbc(), // ссылка на шифрующее ядро AES 256 (функцию с алгоритмом) 
-		NULL,
-		key, // ключ/пароль/секрет 
-		iv); // рандомайзер (случайный начальный вектор) 
-
-	//ОТКРТЫТИЕ ФАЙЛОВ (2 ШТ) в бинарном режиме
-
-	first.read((char*)plaintext, sizeof(plaintext));
-	int plaintext_len = strlen((char *)plaintext);
-
-	int razmer;
-	if (plaintext_len % 256 == 0)
-	{
-		razmer = plaintext_len / 256;
+		// считывание следующей порции 
+		f0.read(buffer, 256);
 	}
+	EVP_EncryptFinal_ex(ctx, (unsigned char *)out_buf, &len);
+	f_encripted.write(out_buf, len);
+	f_encripted.close();
+	f0.close();
 
-	else
+
+	/* РАСШИФРОВАНИЕ */
+	f_encripted.open("f_encripted.txt", std::fstream::in | std::fstream::binary);
+	if (!(f_encripted.is_open()))
+		return 0;
+
+	f_decrypted.open("f_decrypted.txt",
+		std::fstream::out | std::fstream::trunc | std::fstream::binary);
+
+
+
+	ctx = EVP_CIPHER_CTX_new();
+	EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv);
+	len = 0;
+	f_encripted.read(out_buf, 256);
+	while (f_encripted.gcount() > 0)//цикл, пока из файла что то считывается(пока размер считаной функции >0)
+
 	{
-		razmer = (plaintext_len / 256) + 1;
+		// шифрование порции 
+		EVP_DecryptUpdate(ctx, // объект с настройками 
+			(unsigned char *)buffer, // входной параметр: ссылка, куда помещать зашифрованные данные 
+			&len, // выходной параметр: длина полученного шифра 
+			(unsigned char *)out_buf, // входной параметр: что шифровать 
+			f_encripted.gcount()); // входной параметр : длина входных данных 
+
+						  // вывод зашифрованной порции в файл 
+		f_decrypted.write(buffer, len);
+
+		// считывание следующей порции 
+		f_encripted.read(out_buf, 256);
 	}
+	EVP_DecryptFinal_ex(ctx, (unsigned char *)buffer, &len);
+	f_decrypted.write(buffer, len);
+	f_decrypted.close();
+	f_encripted.close();
 
-	//Зациклить{
-		//В 1-ый файл
-		// 4. САМ ПРОЦЕСС ШИФРОВАНИЯ - ФУКНЦИЯ EVP_EncryptUpdate 
-		int len;
-		int cryptedtext_len = 0;
-		for (int i = 0; i < razmer; i++)
-		{
-			EVP_EncryptUpdate(ctx, // объект с настройками 
-				cryptedtext, // входной параметр: ссылка, куда помещать зашифрованные данные 
-				&len, // выходной параметр: длина полученного шифра 
-				plaintext, // входной параметр: что шифровать 
-				plaintext_len); // входной параметр : длина входных данных 
-			cryptedtext_len = len;
-			//Запист во 2-ой файл
-		//Конец цикла }	
-		}
-
-
-		// 5. Финализация процесса шифрования 
-		// необходима, если последний блок заполнен данными не полностью 
-		EVP_EncryptFinal_ex(ctx, cryptedtext + len, &len);
-	// Записать в файл финальную порцию и закрыть 
-		cryptedtext_len += len;
-		cout << "Длина полученного шифра" << cryptedtext_len << endl;
-		cout << "Длина исходника" << plaintext<< endl;
-		cout << "Длина полученного шифра" << cryptedtext_len << endl;
-
-
-		second.write((char*)&cryptedtext, sizeof(cryptedtext));
-		cout << "Зашифрованный текст"<< endl;
-		// 6. Удаление структуры 
-		EVP_CIPHER_CTX_free(ctx);
-
-		// вывод зашифрованных данных 
-		for (int i = 0; i < cryptedtext_len; i++)
-		{
-			cout << hex << cryptedtext[i];
-			if ((i + 1) % 32 == 0) cout << endl;
-		}
-		cout << endl;
-		cout << endl;
-		cout << endl;
-		cout << endl;
-	// РАСШИФРОВКА 
-
-	// 1. 
-	ctx = EVP_CIPHER_CTX_new(); // создание структуры с настройками метода 
-
-	// 2. 
-	EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv); // инициализация методом AES, ключом и вектором 
-
-	// 3. 
-	EVP_DecryptUpdate(ctx, decryptedtext, &len, cryptedtext, cryptedtext_len); // СОБСТВЕННО, ШИФРОВАНИЕ 
-
-	// 4. 
-	int dectypted_len = len;
-	EVP_DecryptFinal_ex(ctx, decryptedtext + len, &len);
-
-	// 5. 
-	dectypted_len += len;
-	EVP_CIPHER_CTX_free(ctx);
-	decryptedtext[dectypted_len] = '\0';
-	cout << decryptedtext << endl;
-
-	// —- шифрование файла 
-	// производится точно так же, но порциями, в цикле 
-	// в цикле 
-	/*
-	1) открытие файлов и настройка параметров OpenSSL
-	2) считывание первого блока
-	3) while(считанный_фрагмент > 0)
-	{
-	4) шифрование считанного
-	5) запись зашифрованного массива в файл
-	6) считывание следующего фрагмента
-	}
-	7)
-
-	применение финализирующей фукнции
-	8) запись финализирующего блока в файл
-	9) закрытие файлов
-	*/
-	getchar();
+	system("Pause");
 	return 0;
 }
